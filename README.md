@@ -103,3 +103,8 @@ Default API URL is already set. To change it, set:
 ```text
 VITE_API_BASE_URL=https://your-api-url.up.railway.app
 ```
+
+
+## GitHub Actions build fix
+
+This package uses Node 24 and does not require `package-lock.json`. The GitHub Actions workflow uses `npm install` without npm cache, so it will not fail with “Dependencies lock file is not found”. A `vite.config.js` file is also included with `base: './'` for GitHub Pages asset loading.
