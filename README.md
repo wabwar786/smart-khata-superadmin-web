@@ -53,3 +53,14 @@ Make sure `Settings -> Pages -> Source = GitHub Actions`.
 ## Important
 
 Deploy the updated API package first, then deploy this web portal. Some admin screens need the new `/api/admin/*` endpoints.
+
+
+## GitHub Actions npm fix
+
+This version pins React/Vite package versions and uses Node 22. The workflow removes any old `package-lock.json` and installs dependencies with:
+
+```bash
+npm install --no-package-lock --no-audit --no-fund --legacy-peer-deps
+```
+
+This avoids npm internal lock/cache errors on GitHub Actions.
