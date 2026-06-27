@@ -81,6 +81,7 @@ export const AdminApi = {
   },
   createSuperUser: (body) => apiRequest('/api/admin/super-users', { method: 'POST', body }),
   setUserActive: (publicId, isActive) => apiRequest(`/api/admin/users/${publicId}/block`, { method: 'PATCH', body: { isActive } }),
+  deleteUser: (publicId) => apiRequest(`/api/admin/users/${publicId}`, { method: 'DELETE' }),
   plans: async () => toArray((await apiRequest('/api/admin/plans')).data),
   subscriptionPayments: async (status = '') => {
     const qs = status ? `?status=${encodeURIComponent(status)}` : ''; return toArray((await apiRequest(`/api/admin/subscription-payments${qs}`)).data);

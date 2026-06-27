@@ -64,3 +64,8 @@ npm install --no-package-lock --no-audit --no-fund --legacy-peer-deps
 ```
 
 This avoids npm internal lock/cache errors on GitHub Actions.
+
+
+## User delete option
+
+The Users module now includes a Delete button. This performs a safe soft-delete: the user login is disabled, business access is removed, and historical invoices/ledger data remain preserved for audit/reporting. The logged-in Super Admin cannot delete their own account, and the API prevents deleting the last active Super Admin.
