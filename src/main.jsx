@@ -1,47 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import {
-  API_BASE_URL,
-  adminDashboard,
-  approvePayment,
-  clearSession,
-  formatDate,
-  formatDateTime,
-  getStoredUser,
-  getToken,
-  listBusinesses,
-  listPlans,
-  listSubscriptionPayments,
-  login,
-  money,
-  rejectPayment,
-  setBusinessBlocked,
-} from './api.js';
+import { API_BASE_URL, AdminApi, clearSession, exportCsv, formatDate, formatDateTime, getStoredUser, getToken, login, money, number, toArray, toObject } from './api.js';
 import './styles.css';
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: '▦' },
   { key: 'businesses', label: 'Businesses', icon: '🏪' },
-  { key: 'payments', label: 'Subscription payments', icon: '💳' },
+  { key: 'nearExpiry', label: 'Near expiry', icon: '⏰' },
+  { key: 'users', label: 'Users', icon: '👥' },
+  { key: 'billing', label: 'Billing', icon: '💳' },
   { key: 'plans', label: 'Plans', icon: '📦' },
-  { key: 'setup', label: 'Setup guide', icon: '⚙' },
+  { key: 'tools', label: 'Tools', icon: '⚙' },
 ];
 
 function App() {
   const [token, setToken] = useState(getToken());
   const [user, setUser] = useState(getStoredUser());
-
-  const handleLogout = useCallback(() => {
-    clearSession();
-    setToken('');
-    setUser(null);
-  }, []);
-
-  if (!token) {
-    return <LoginScreen onLogin={(next) => { setToken(next.token); setUser(next.user); }} />;
-  }
-
-  return <AdminShell user={user} onLogout={handleLogout} />;
+  const logout = useCallback(() => { clearSession(); setToken(''); setUser(null); }, []);
+  if (!token) return <LoginScreen onLogin={(next) => { setToken(next.token); setUser(next.user); }} />;
+  return <AdminShell user={user} onLogout={logout} />;
 }
 
 function LoginScreen({ onLogin }) {
@@ -49,494 +26,182 @@ function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
   async function submit(e) {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const session = await login(emailOrPhone.trim(), password);
-      onLogin(session);
-    } catch (err) {
-      setError(err.message || 'Login failed.');
-    } finally {
-      setLoading(false);
-    }
+    e.preventDefault(); setLoading(true); setError('');
+    try { onLogin(await login(emailOrPhone.trim(), password)); }
+    catch (err) { setError(err.message || 'Login failed.'); }
+    finally { setLoading(false); }
   }
-
-  return (
-    <main className="login-page">
-      <section className="login-visual">
-        <div className="brand-lockup">
-          <div className="brand-mark">SK</div>
-          <div>
-            <h1>Smart Khata</h1>
-            <p>Super Admin Portal</p>
-          </div>
-        </div>
-        <div className="visual-card">
-          <span className="pulse-dot" />
-          <h2>Control your SaaS business</h2>
-          <p>Manage businesses, approve subscriptions, block misuse, and monitor platform growth from one clean portal.</p>
-          <div className="mini-grid">
-            <div><strong>Live</strong><span>Railway API</span></div>
-            <div><strong>Secure</strong><span>JWT login</span></div>
-            <div><strong>Fast</strong><span>Static web app</span></div>
-          </div>
-        </div>
-      </section>
-
-      <section className="login-panel">
-        <form className="login-card" onSubmit={submit}>
-          <div className="eyebrow">Admin access</div>
-          <h2>Login to Super Admin</h2>
-          <p className="muted">Use a user account where <code>is_super_admin = true</code>.</p>
-
-          {error && <div className="alert error">{error}</div>}
-
-          <label>
-            Email or phone
-            <input value={emailOrPhone} onChange={(e) => setEmailOrPhone(e.target.value)} placeholder="admin@example.com" required />
-          </label>
-
-          <label>
-            Password
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
-          </label>
-
-          <button className="primary-btn" disabled={loading}>{loading ? 'Signing in...' : 'Login'}</button>
-
-          <div className="api-note">
-            API: <span>{API_BASE_URL}</span>
-          </div>
-        </form>
-      </section>
-    </main>
-  );
+  return <main className="login-page">
+    <section className="login-card compact-login">
+      <div className="brand-row"><div className="brand-mark">SK</div><div><h1>Smart Khata</h1><p>Super Admin Control Panel</p></div></div>
+      <div className="mini-info"><span>Railway API</span><strong>{API_BASE_URL}</strong></div>
+      {error && <Alert type="error">{error}</Alert>}
+      <form onSubmit={submit} className="form-grid one">
+        <Field label="Email or phone"><input value={emailOrPhone} onChange={(e) => setEmailOrPhone(e.target.value)} required placeholder="admin@example.com" /></Field>
+        <Field label="Password"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" /></Field>
+        <button className="btn primary" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
+      </form>
+    </section>
+  </main>;
 }
 
 function AdminShell({ user, onLogout }) {
   const [active, setActive] = useState('dashboard');
-
+  const [selectedBusiness, setSelectedBusiness] = useState(null);
   const title = navItems.find((item) => item.key === active)?.label || 'Dashboard';
-
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="brand-mark small">SK</div>
-          <div>
-            <strong>Smart Khata</strong>
-            <span>Super Admin</span>
-          </div>
-        </div>
-        <nav>
-          {navItems.map((item) => (
-            <button key={item.key} className={active === item.key ? 'active' : ''} onClick={() => setActive(item.key)}>
-              <span>{item.icon}</span>{item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <div className="user-chip">
-            <div className="avatar">{(user?.fullName || user?.full_name || 'A').slice(0, 1).toUpperCase()}</div>
-            <div>
-              <strong>{user?.fullName || user?.full_name || 'Admin'}</strong>
-              <span>{user?.email || 'Super admin'}</span>
-            </div>
-          </div>
-          <button className="ghost-btn full" onClick={onLogout}>Logout</button>
-        </div>
-      </aside>
-
-      <main className="main-content">
-        <header className="topbar">
-          <div>
-            <h1>{title}</h1>
-            <p>Smart Khata SaaS control centre</p>
-          </div>
-          <div className="top-actions">
-            <span className="api-badge">API online</span>
-            <button className="ghost-btn" onClick={() => window.location.reload()}>Refresh</button>
-          </div>
-        </header>
-
-        {active === 'dashboard' && <Dashboard />}
-        {active === 'businesses' && <Businesses />}
-        {active === 'payments' && <SubscriptionPayments />}
-        {active === 'plans' && <Plans />}
-        {active === 'setup' && <SetupGuide />}
-      </main>
-    </div>
-  );
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <div className="side-brand"><div className="brand-mark small">SK</div><div><strong>Smart Khata</strong><span>Super Admin</span></div></div>
+      <nav>{navItems.map((n) => <button key={n.key} onClick={() => setActive(n.key)} className={active === n.key ? 'active' : ''}><span>{n.icon}</span>{n.label}</button>)}</nav>
+      <div className="side-footer"><strong>{user?.fullName || user?.full_name || 'Admin'}</strong><span>{user?.email}</span><button className="btn ghost full" onClick={onLogout}>Logout</button></div>
+    </aside>
+    <main className="main-content">
+      <header className="topbar"><div><h1>{title}</h1><p>Compact SaaS control center for businesses, users, billing, stock and sales.</p></div><button className="btn ghost" onClick={() => window.location.reload()}>Refresh</button></header>
+      {active === 'dashboard' && <Dashboard onOpenBusiness={setSelectedBusiness} />}
+      {active === 'businesses' && <Businesses onOpenBusiness={setSelectedBusiness} />}
+      {active === 'nearExpiry' && <NearExpiry onOpenBusiness={setSelectedBusiness} />}
+      {active === 'users' && <Users />}
+      {active === 'billing' && <Billing onOpenBusiness={setSelectedBusiness} />}
+      {active === 'plans' && <Plans />}
+      {active === 'tools' && <Tools />}
+    </main>
+    {selectedBusiness && <BusinessDrawer publicId={selectedBusiness} onClose={() => setSelectedBusiness(null)} />}
+  </div>;
 }
 
-function LoadState({ loading, error, children, onRetry }) {
-  if (loading) return <div className="card skeleton-card"><div className="spinner" /> Loading...</div>;
-  if (error) return <div className="alert error"><strong>Error:</strong> {error} {onRetry && <button onClick={onRetry}>Retry</button>}</div>;
-  return children;
-}
+function Alert({ children, type = 'info' }) { return <div className={`alert ${type}`}>{children}</div>; }
+function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
+function Loader({ text = 'Loading...' }) { return <div className="card loader"><span className="spinner" />{text}</div>; }
+function StatusBadge({ value }) { const v = String(value || '').toLowerCase(); return <span className={`badge ${v}`}>{value || '-'}</span>; }
+function Empty({ text }) { return <div className="empty">{text || 'No record found.'}</div>; }
 
-function Dashboard() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setData(await adminDashboard());
-    } catch (err) {
-      setError(err.message || 'Unable to load dashboard.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+function Dashboard({ onOpenBusiness }) {
+  const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState('');
+  const load = useCallback(async () => { setLoading(true); setError(''); try { setData(await AdminApi.dashboard()); } catch (e) { setError(e.message); } finally { setLoading(false); } }, []);
   useEffect(() => { load(); }, [load]);
-
-  const chartData = useMemo(() => [
-    { label: 'Businesses', value: Number(data?.totalBusinesses || 0) },
-    { label: 'Users', value: Number(data?.totalUsers || 0) },
-    { label: 'Pending payments', value: Number(data?.pendingSubscriptionPayments || 0) },
-    { label: 'Active subscriptions', value: Number(data?.activeSubscriptions || 0) },
-  ], [data]);
-
-  return (
-    <LoadState loading={loading} error={error} onRetry={load}>
-      <section className="kpi-grid">
-        <Kpi title="Total businesses" value={data?.totalBusinesses || 0} icon="🏪" tone="teal" />
-        <Kpi title="Total users" value={data?.totalUsers || 0} icon="👥" tone="blue" />
-        <Kpi title="Pending payments" value={data?.pendingSubscriptionPayments || 0} icon="⏳" tone="amber" />
-        <Kpi title="Active subscriptions" value={data?.activeSubscriptions || 0} icon="✅" tone="green" />
-      </section>
-
-      <section className="content-grid two">
-        <div className="card">
-          <div className="card-head">
-            <div>
-              <h3>Platform overview</h3>
-              <p>Live totals from your Smart Khata backend.</p>
-            </div>
-          </div>
-          <BarChart data={chartData} />
-        </div>
-        <div className="card gradient-card">
-          <h3>Admin actions</h3>
-          <p>Approve subscription payments quickly, block inactive or suspicious businesses, and keep control of your monthly revenue.</p>
-          <div className="action-list">
-            <span>Review pending payment screenshots</span>
-            <span>Block businesses with expired/non-paid subscription</span>
-            <span>Monitor business growth and user count</span>
-          </div>
-        </div>
-      </section>
-    </LoadState>
-  );
-}
-
-function Kpi({ title, value, icon, tone }) {
-  return (
-    <div className={`kpi-card ${tone}`}>
-      <div className="kpi-icon">{icon}</div>
-      <div>
-        <span>{title}</span>
-        <strong>{Number(value || 0).toLocaleString()}</strong>
-      </div>
-    </div>
-  );
-}
-
-function BarChart({ data }) {
-  const max = Math.max(1, ...data.map((row) => row.value));
-  return (
-    <div className="bar-chart">
-      {data.map((row) => (
-        <div className="bar-row" key={row.label}>
-          <div className="bar-label">{row.label}</div>
-          <div className="bar-track"><div className="bar-fill" style={{ width: `${Math.max(6, (row.value / max) * 100)}%` }} /></div>
-          <div className="bar-value">{row.value.toLocaleString()}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Businesses() {
-  const [rows, setRows] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [workingId, setWorkingId] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const result = await listBusinesses({ page, search: search.trim() });
-      setRows(result.data);
-      setPagination(result.pagination);
-    } catch (err) {
-      setError(err.message || 'Unable to load businesses.');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function toggleBlock(row) {
-    const id = row.public_id || row.publicId;
-    const isBlocked = Boolean(row.is_blocked || row.isBlocked);
-    const reason = !isBlocked ? window.prompt('Reason for blocking this business?', 'Subscription not paid') || '' : '';
-    setWorkingId(id);
-    try {
-      await setBusinessBlocked(id, !isBlocked, reason);
-      await load();
-    } catch (err) {
-      alert(err.message || 'Action failed.');
-    } finally {
-      setWorkingId('');
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head sticky-head">
-        <div>
-          <h3>Businesses</h3>
-          <p>View registered businesses and block/unblock access.</p>
-        </div>
-        <div className="search-box">
-          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search business, owner or phone" />
-        </div>
-      </div>
-      <LoadState loading={loading} error={error} onRetry={load}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Business</th><th>Owner</th><th>City</th><th>Status</th><th>Created</th><th></th></tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const id = row.public_id || row.publicId;
-                const blocked = Boolean(row.is_blocked || row.isBlocked);
-                return (
-                  <tr key={id}>
-                    <td><strong>{row.business_name || row.businessName}</strong><span>{row.business_type || row.businessType || 'Business'}</span></td>
-                    <td><strong>{row.owner_name || row.ownerName}</strong><span>{row.owner_email || row.ownerEmail || row.owner_phone || row.ownerPhone || '-'}</span></td>
-                    <td>{row.city || '-'}</td>
-                    <td><StatusBadge status={blocked ? 'BLOCKED' : 'ACTIVE'} /></td>
-                    <td>{formatDate(row.created_at || row.createdAt)}</td>
-                    <td className="right"><button className={blocked ? 'success-btn' : 'danger-btn'} disabled={workingId === id} onClick={() => toggleBlock(row)}>{blocked ? 'Unblock' : 'Block'}</button></td>
-                  </tr>
-                );
-              })}
-              {!rows.length && <tr><td colSpan="6" className="empty">No businesses found.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={page} setPage={setPage} pagination={pagination} />
-      </LoadState>
+  if (loading) return <Loader />; if (error) return <Alert type="error">{error}</Alert>;
+  const daily = toArray(data.dailySales);
+  return <>
+    <section className="kpi-grid">
+      <Kpi label="Businesses" value={data.totalBusinesses} />
+      <Kpi label="Users" value={data.totalUsers} />
+      <Kpi label="Active subs" value={data.activeSubscriptions} />
+      <Kpi label="Expiring 7d" value={data.expiringIn7Days} tone="warn" />
+      <Kpi label="Sub revenue" value={money(data.monthlySubscriptionRevenue)} />
+      <Kpi label="Sales month" value={money(data.salesThisMonth)} />
+      <Kpi label="Invoices month" value={data.invoicesThisMonth} />
+      <Kpi label="Blocked" value={data.blockedBusinesses} tone="danger" />
     </section>
-  );
-}
-
-function Pagination({ page, setPage, pagination }) {
-  const totalPages = Number(pagination.totalPages || 1);
-  return (
-    <div className="pagination">
-      <span>Total: {Number(pagination.total || 0).toLocaleString()}</span>
-      <div>
-        <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
-        <strong>{page} / {totalPages}</strong>
-        <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
-      </div>
-    </div>
-  );
-}
-
-function SubscriptionPayments() {
-  const [status, setStatus] = useState('PENDING');
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [workingId, setWorkingId] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setRows(await listSubscriptionPayments(status));
-    } catch (err) {
-      setError(err.message || 'Unable to load subscription payments.');
-    } finally {
-      setLoading(false);
-    }
-  }, [status]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function approve(id) {
-    if (!window.confirm('Approve this subscription payment and extend subscription by 1 month?')) return;
-    setWorkingId(String(id));
-    try {
-      await approvePayment(id);
-      await load();
-    } catch (err) {
-      alert(err.message || 'Approve failed.');
-    } finally {
-      setWorkingId('');
-    }
-  }
-
-  async function reject(id) {
-    const reason = window.prompt('Reject reason', 'Invalid or missing payment proof');
-    if (!reason) return;
-    setWorkingId(String(id));
-    try {
-      await rejectPayment(id, reason);
-      await load();
-    } catch (err) {
-      alert(err.message || 'Reject failed.');
-    } finally {
-      setWorkingId('');
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h3>Subscription payments</h3>
-          <p>Approve or reject manual subscription payments.</p>
-        </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="PENDING">Pending</option>
-          <option value="APPROVED">Approved</option>
-          <option value="REJECTED">Rejected</option>
-          <option value="">All</option>
-        </select>
-      </div>
-      <LoadState loading={loading} error={error} onRetry={load}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Business</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>Date</th><th></th></tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const id = row.subscription_payment_id || row.subscriptionPaymentId;
-                const paymentStatus = row.payment_status || row.paymentStatus;
-                return (
-                  <tr key={id}>
-                    <td><strong>{row.business_name || row.businessName}</strong><span>{row.business_public_id || row.businessPublicId}</span></td>
-                    <td>{money(row.amount, row.currency_code || row.currencyCode || 'PKR')}</td>
-                    <td>{row.payment_method || row.paymentMethod || '-'}</td>
-                    <td>{row.transaction_reference || row.transactionReference || '-'}</td>
-                    <td><StatusBadge status={paymentStatus} /></td>
-                    <td>{formatDateTime(row.created_at || row.createdAt)}</td>
-                    <td className="right actions">
-                      {row.payment_screenshot_url && <a className="ghost-link" href={row.payment_screenshot_url} target="_blank" rel="noreferrer">Proof</a>}
-                      {paymentStatus === 'PENDING' && <>
-                        <button className="success-btn" disabled={workingId === String(id)} onClick={() => approve(id)}>Approve</button>
-                        <button className="danger-btn" disabled={workingId === String(id)} onClick={() => reject(id)}>Reject</button>
-                      </>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!rows.length && <tr><td colSpan="7" className="empty">No payments found.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </LoadState>
+    <section className="grid two">
+      <div className="card"><CardHead title="Sales trend" sub="Last 7 days platform sales" /><MiniBars rows={daily.map((x) => ({ label: x.label, value: Number(x.total_sales || 0) }))} moneyBars /></div>
+      <div className="card"><CardHead title="Top businesses" sub="By sales in last 30 days" />{toArray(data.topBusinesses).map((b) => <button className="row-button" key={b.publicId} onClick={() => onOpenBusiness(b.publicId)}><span>{b.businessName}</span><strong>{money(b.totalSales)}</strong></button>)}</div>
     </section>
-  );
+    <section className="card"><CardHead title="Near expiry subscriptions" sub="Renew these first" />{toArray(data.nearExpiry).length ? <CompactTable columns={["Business", "Plan", "End", "Days"]} rows={toArray(data.nearExpiry).map((b) => [<button className="link" onClick={() => onOpenBusiness(b.publicId)}>{b.businessName}</button>, b.planName, formatDate(b.endDate), b.daysLeft])} /> : <Empty text="No near-expiry subscription." />}</section>
+  </>;
 }
 
-function Plans() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+function Kpi({ label, value, tone = '' }) { return <div className={`kpi ${tone}`}><span>{label}</span><strong>{typeof value === 'number' ? number(value) : value}</strong></div>; }
+function CardHead({ title, sub, right }) { return <div className="card-head"><div><h3>{title}</h3>{sub && <p>{sub}</p>}</div>{right}</div>; }
+function MiniBars({ rows, moneyBars }) { const max = Math.max(1, ...rows.map((r) => Number(r.value || 0))); return <div className="mini-bars">{rows.map((r) => <div className="mini-bar" key={r.label}><span>{r.label}</span><div><i style={{ width: `${Math.max(4, (Number(r.value || 0) / max) * 100)}%` }} /></div><b>{moneyBars ? money(r.value) : number(r.value)}</b></div>)}</div>; }
+function CompactTable({ columns, rows }) { return <div className="table-wrap"><table><thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table></div>; }
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setRows(await listPlans());
-    } catch (err) {
-      setError(err.message || 'Unable to load plans.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+function Businesses({ onOpenBusiness }) {
+  const [rows, setRows] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [search, setSearch] = useState(''), [showCreate, setShowCreate] = useState(false);
+  const load = useCallback(async () => { setLoading(true); setError(''); try { const res = await AdminApi.listBusinesses({ search }); setRows(res.data); } catch (e) { setError(e.message); } finally { setLoading(false); } }, [search]);
   useEffect(() => { load(); }, [load]);
-
-  return (
-    <LoadState loading={loading} error={error} onRetry={load}>
-      <section className="plan-grid">
-        {rows.map((plan) => (
-          <div className="plan-card" key={plan.plan_id || plan.planId || plan.plan_code}>
-            <div className="plan-code">{plan.plan_code || plan.planCode}</div>
-            <h3>{plan.plan_name || plan.planName}</h3>
-            <div className="plan-price">{money(plan.monthly_price || plan.monthlyPrice, plan.currency_code || plan.currencyCode || 'PKR')}<span>/month</span></div>
-            <ul>
-              <li>Users: {plan.max_users || plan.maxUsers || 'Unlimited'}</li>
-              <li>Businesses: {plan.max_businesses || plan.maxBusinesses || 'Unlimited'}</li>
-              <li>Inventory: {(plan.has_inventory ?? plan.hasInventory) ? 'Yes' : 'No'}</li>
-              <li>Quotation: {(plan.has_quotation ?? plan.hasQuotation) ? 'Yes' : 'No'}</li>
-              <li>WhatsApp sharing: {(plan.has_whatsapp_sharing ?? plan.hasWhatsAppSharing) ? 'Yes' : 'No'}</li>
-            </ul>
-          </div>
-        ))}
-      </section>
-    </LoadState>
-  );
+  return <section className="card"><CardHead title="Businesses" sub="Edit, view data, block, assign subscription" right={<button className="btn primary small" onClick={() => setShowCreate(true)}>+ Create business</button>} />
+    <SearchBar value={search} setValue={setSearch} onSearch={load} placeholder="Search business, owner, email, phone" />
+    {error && <Alert type="error">{error}</Alert>}{loading ? <Loader /> : <BusinessTable rows={rows} onOpen={onOpenBusiness} onChanged={load} />}
+    {showCreate && <CreateBusinessModal onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); load(); }} />}
+  </section>;
 }
 
-function SetupGuide() {
-  return (
-    <div className="content-grid two">
-      <section className="card setup-card">
-        <h3>Make your account Super Admin</h3>
-        <p>Open Railway PostgreSQL → Data → Query and run this SQL for the email you want to use as admin.</p>
-        <pre>{`UPDATE app_users
-SET is_super_admin = TRUE
-WHERE LOWER(email) = LOWER('ahmed@example.com');`}</pre>
-        <p>Then login here with the same email/password.</p>
-      </section>
-      <section className="card setup-card">
-        <h3>API configuration</h3>
-        <p>This portal uses your Railway API URL:</p>
-        <pre>{API_BASE_URL}</pre>
-        <p>If you change API URL, update <code>VITE_API_BASE_URL</code> in GitHub Actions or Railway variables.</p>
-      </section>
-      <section className="card setup-card">
-        <h3>Recommended admin workflow</h3>
-        <ol>
-          <li>Customer sends JazzCash/EasyPaisa/bank payment proof.</li>
-          <li>Business owner submits payment request from mobile app.</li>
-          <li>You open Subscription payments.</li>
-          <li>Approve valid payment or reject invalid proof.</li>
-          <li>Subscription automatically extends by one month.</li>
-        </ol>
-      </section>
-      <section className="card setup-card">
-        <h3>Security note</h3>
-        <p>Keep super admin accounts limited. Use strong passwords. Do not share admin login with normal business users.</p>
-      </section>
-    </div>
-  );
+function BusinessTable({ rows, onOpen, onChanged }) {
+  if (!rows.length) return <Empty />;
+  return <CompactTable columns={["Business", "Owner", "Sub", "Sales", "Stock/Cust", "Status", "Action"]} rows={rows.map((b) => [
+    <button className="link strong" onClick={() => onOpen(b.publicId)}>{b.businessName}<small>{b.city || '-'}</small></button>,
+    <span>{b.ownerName}<small>{b.ownerEmail}</small></span>,
+    <span>{b.planName || '-'}<small>{formatDate(b.subscriptionEndDate)} ({b.daysLeft ?? '-'}d)</small></span>,
+    money(b.totalSales),
+    `${b.totalProducts || 0}/${b.totalCustomers || 0}`,
+    <StatusBadge value={b.isBlocked ? 'BLOCKED' : b.subscriptionStatus || 'ACTIVE'} />,
+    <button className="btn tiny" onClick={async () => { await AdminApi.setBusinessBlocked(b.publicId, !b.isBlocked, !b.isBlocked ? 'Blocked by super admin' : ''); onChanged(); }}>{b.isBlocked ? 'Unblock' : 'Block'}</button>
+  ])} />;
 }
 
-function StatusBadge({ status }) {
-  const normalized = String(status || 'UNKNOWN').toUpperCase();
-  return <span className={`status ${normalized.toLowerCase()}`}>{normalized}</span>;
+function SearchBar({ value, setValue, onSearch, placeholder }) { return <div className="searchbar"><input value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && onSearch()} placeholder={placeholder} /><button className="btn small" onClick={onSearch}>Search</button></div>; }
+
+function CreateBusinessModal({ onClose, onSaved }) {
+  const [plans, setPlans] = useState([]), [loading, setLoading] = useState(false), [error, setError] = useState('');
+  const today = new Date().toISOString().slice(0, 10); const end = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const [form, setForm] = useState({ ownerFullName: '', ownerEmail: '', ownerPhone: '', ownerPassword: '12345678', businessName: '', businessType: '', city: '', phoneNumber: '', whatsappNumber: '', planId: '', startDate: today, endDate: end, subscriptionStatus: 'ACTIVE', isTrial: false, currencyCode: 'PKR' });
+  useEffect(() => { AdminApi.plans().then(setPlans).catch(() => {}); }, []);
+  function set(k, v) { setForm((f) => ({ ...f, [k]: v })); }
+  async function save(e) { e.preventDefault(); setLoading(true); setError(''); try { await AdminApi.createBusiness({ ...form, planId: Number(form.planId || plans[0]?.plan_id) }); onSaved(); } catch (err) { setError(err.message); } finally { setLoading(false); } }
+  return <Modal title="Create business + admin user" onClose={onClose}><form onSubmit={save} className="form-grid two">{error && <Alert type="error">{error}</Alert>}
+    <Field label="Owner full name"><input value={form.ownerFullName} onChange={(e) => set('ownerFullName', e.target.value)} required /></Field>
+    <Field label="Owner email"><input type="email" value={form.ownerEmail} onChange={(e) => set('ownerEmail', e.target.value)} required /></Field>
+    <Field label="Owner phone"><input value={form.ownerPhone} onChange={(e) => set('ownerPhone', e.target.value)} /></Field>
+    <Field label="Owner password"><input value={form.ownerPassword} onChange={(e) => set('ownerPassword', e.target.value)} required /></Field>
+    <Field label="Business name"><input value={form.businessName} onChange={(e) => set('businessName', e.target.value)} required /></Field>
+    <Field label="Business type"><input value={form.businessType} onChange={(e) => set('businessType', e.target.value)} /></Field>
+    <Field label="City"><input value={form.city} onChange={(e) => set('city', e.target.value)} /></Field>
+    <Field label="Currency"><input value={form.currencyCode} onChange={(e) => set('currencyCode', e.target.value)} /></Field>
+    <Field label="Phone"><input value={form.phoneNumber} onChange={(e) => set('phoneNumber', e.target.value)} /></Field>
+    <Field label="WhatsApp"><input value={form.whatsappNumber} onChange={(e) => set('whatsappNumber', e.target.value)} /></Field>
+    <Field label="Plan"><select value={form.planId} onChange={(e) => set('planId', e.target.value)} required>{plans.map((p) => <option key={p.plan_id} value={p.plan_id}>{p.plan_name} - {money(p.monthly_price, p.currency_code)}</option>)}</select></Field>
+    <Field label="Status"><select value={form.subscriptionStatus} onChange={(e) => set('subscriptionStatus', e.target.value)}><option>ACTIVE</option><option>TRIAL</option><option>EXPIRED</option><option>CANCELLED</option><option>BLOCKED</option></select></Field>
+    <Field label="Start date"><input type="date" value={form.startDate} onChange={(e) => set('startDate', e.target.value)} /></Field>
+    <Field label="End date"><input type="date" value={form.endDate} onChange={(e) => set('endDate', e.target.value)} /></Field>
+    <div className="modal-actions"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" disabled={loading}>{loading ? 'Saving...' : 'Create business'}</button></div>
+  </form></Modal>;
 }
+
+function BusinessDrawer({ publicId, onClose }) {
+  const [tab, setTab] = useState('overview'), [data, setData] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true);
+  const load = useCallback(async () => { setLoading(true); setError(''); try { setData(await AdminApi.getBusiness(publicId)); } catch (e) { setError(e.message); } finally { setLoading(false); } }, [publicId]);
+  useEffect(() => { load(); }, [load]);
+  const b = toObject(data?.business);
+  return <div className="drawer-backdrop"><aside className="drawer"><header><div><h2>{b.businessName || 'Business'}</h2><p>{b.ownerName || ''} · {b.city || ''}</p></div><button className="btn ghost" onClick={onClose}>Close</button></header>
+    {loading ? <Loader /> : error ? <Alert type="error">{error}</Alert> : <>
+      <div className="tabs">{['overview','edit','users','subscription','whatsapp','sales','inventory','customers','billing','performance'].map((t) => <button key={t} onClick={() => setTab(t)} className={tab === t ? 'active' : ''}>{t}</button>)}</div>
+      {tab === 'overview' && <OverviewTab data={data} />}
+      {tab === 'edit' && <EditBusinessTab business={b} onSaved={load} />}
+      {tab === 'users' && <BusinessDataTab loader={() => AdminApi.businessUsers(publicId)} type="users" />}
+      {tab === 'subscription' && <SubscriptionTab publicId={publicId} current={data.subscription} onSaved={load} />}
+      {tab === 'whatsapp' && <WhatsappTab publicId={publicId} />}
+      {tab === 'sales' && <BusinessDataTab loader={() => AdminApi.businessSales(publicId)} type="sales" />}
+      {tab === 'inventory' && <BusinessDataTab loader={() => AdminApi.businessInventory(publicId)} type="inventory" exportable />}
+      {tab === 'customers' && <BusinessDataTab loader={() => AdminApi.businessCustomers(publicId)} type="customers" />}
+      {tab === 'billing' && <BusinessDataTab loader={() => AdminApi.billingHistory(publicId)} type="billing" />}
+      {tab === 'performance' && <PerformanceTab publicId={publicId} />}
+    </>}
+  </aside></div>;
+}
+
+function OverviewTab({ data }) { const b = toObject(data.business), s = toObject(data.stats), sub = toObject(data.subscription); return <div className="drawer-section"><section className="kpi-grid compact"><Kpi label="Customers" value={s.customers} /><Kpi label="Products" value={s.products} /><Kpi label="Invoices" value={s.invoices} /><Kpi label="Sales" value={money(s.sales)} /><Kpi label="Receivable" value={money(s.receivable)} /><Kpi label="Reminders" value={s.pending_reminders} /></section><CompactTable columns={["Field","Value"]} rows={[["Business", b.businessName], ["Owner", `${b.ownerName} (${b.ownerEmail})`], ["Phone", b.phoneNumber], ["WhatsApp", b.whatsAppNumber], ["City", b.city], ["Subscription", `${sub.planName || '-'} / ${sub.status || '-'} / ${formatDate(sub.endDate)}`]]} /></div>; }
+
+function EditBusinessTab({ business, onSaved }) { const [form, setForm] = useState({ businessName: business.businessName || '', businessType: business.businessType || '', phoneNumber: business.phoneNumber || '', whatsAppNumber: business.whatsAppNumber || '', email: business.email || '', address: business.address || '', city: business.city || '', country: business.country || 'Pakistan', ntn: business.ntn || '', strn: business.strn || '', currencyCode: business.currencyCode || 'PKR', isActive: business.isActive !== false }); const [msg, setMsg] = useState(''); function set(k,v){setForm(f=>({...f,[k]:v}))} async function save(e){e.preventDefault(); setMsg(''); await AdminApi.updateBusiness(business.publicId, form); setMsg('Saved.'); onSaved();} return <form className="form-grid two drawer-section" onSubmit={save}>{msg && <Alert>{msg}</Alert>}{Object.keys(form).filter(k=>k!=='isActive').map(k=><Field key={k} label={k}><input value={form[k] || ''} onChange={e=>set(k,e.target.value)} /></Field>)}<Field label="Active"><select value={String(form.isActive)} onChange={e=>set('isActive', e.target.value==='true')}><option value="true">Active</option><option value="false">Inactive</option></select></Field><div className="modal-actions"><button className="btn primary">Save details</button></div></form>; }
+
+function SubscriptionTab({ publicId, current, onSaved }) { const [plans, setPlans] = useState([]), [msg, setMsg] = useState(''), [form, setForm] = useState({ planId: current?.planId || '', startDate: (current?.startDate || new Date().toISOString()).slice(0,10), endDate: (current?.endDate || new Date(Date.now()+30*86400000).toISOString()).slice(0,10), subscriptionStatus: current?.status || 'ACTIVE', isTrial: !!current?.isTrial, autoRenew: false }); useEffect(()=>{AdminApi.plans().then(setPlans)},[]); function set(k,v){setForm(f=>({...f,[k]:v}))} async function save(e){e.preventDefault(); await AdminApi.attachSubscription(publicId, {...form, planId:Number(form.planId)}); setMsg('Subscription updated.'); onSaved();} return <form className="form-grid two drawer-section" onSubmit={save}>{msg && <Alert>{msg}</Alert>}<Field label="Plan"><select value={form.planId} onChange={e=>set('planId',e.target.value)}>{plans.map(p=><option key={p.plan_id} value={p.plan_id}>{p.plan_name} - {money(p.monthly_price,p.currency_code)}</option>)}</select></Field><Field label="Status"><select value={form.subscriptionStatus} onChange={e=>set('subscriptionStatus',e.target.value)}><option>ACTIVE</option><option>TRIAL</option><option>EXPIRED</option><option>CANCELLED</option><option>BLOCKED</option></select></Field><Field label="Start"><input type="date" value={form.startDate} onChange={e=>set('startDate',e.target.value)} /></Field><Field label="End"><input type="date" value={form.endDate} onChange={e=>set('endDate',e.target.value)} /></Field><Field label="Trial"><select value={String(form.isTrial)} onChange={e=>set('isTrial',e.target.value==='true')}><option value="false">No</option><option value="true">Yes</option></select></Field><div className="modal-actions"><button className="btn primary">Attach / update</button></div></form>; }
+
+function WhatsappTab({ publicId }) { const [form,setForm]=useState({ provider:'custom', apiUrl:'', apiKey:'', senderPhone:'', isActive:false }), [msg,setMsg]=useState(''); useEffect(()=>{AdminApi.getWhatsapp(publicId).then(d=>setForm({ provider:d.provider||'custom', apiUrl:d.api_url||d.apiUrl||'', apiKey:d.api_key||d.apiKey||'', senderPhone:d.sender_phone||d.senderPhone||'', isActive:!!d.is_active||!!d.isActive }))},[publicId]); function set(k,v){setForm(f=>({...f,[k]:v}))} async function save(e){e.preventDefault(); await AdminApi.saveWhatsapp(publicId, form); setMsg('WhatsApp API settings saved. APK integration can read these later.')} return <form className="form-grid one drawer-section" onSubmit={save}>{msg&&<Alert>{msg}</Alert>}<Field label="Provider"><input value={form.provider} onChange={e=>set('provider',e.target.value)} placeholder="custom / meta / ultramsg" /></Field><Field label="API URL"><input value={form.apiUrl} onChange={e=>set('apiUrl',e.target.value)} placeholder="https://api.example.com/send" /></Field><Field label="API key / token"><input value={form.apiKey} onChange={e=>set('apiKey',e.target.value)} placeholder="Paste key here" /></Field><Field label="Sender phone"><input value={form.senderPhone} onChange={e=>set('senderPhone',e.target.value)} /></Field><Field label="Active"><select value={String(form.isActive)} onChange={e=>set('isActive',e.target.value==='true')}><option value="false">No</option><option value="true">Yes</option></select></Field><button className="btn primary">Save WhatsApp settings</button></form> }
+
+function BusinessDataTab({ loader, type, exportable }) { const [rows,setRows]=useState([]), [loading,setLoading]=useState(true), [error,setError]=useState(''); useEffect(()=>{let ok=true; setLoading(true); loader().then(r=>ok&&setRows(r)).catch(e=>ok&&setError(e.message)).finally(()=>ok&&setLoading(false)); return()=>{ok=false}},[loader]); if(loading)return<Loader/>; if(error)return<Alert type="error">{error}</Alert>; if(!rows.length)return<Empty/>; const keys = Object.keys(rows[0]).slice(0, type==='inventory'?12:9); return <div className="drawer-section">{exportable&&<div className="toolbar"><button className="btn small primary" onClick={()=>exportCsv(`smart-khata-${type}.csv`,rows)}>Download Excel CSV</button></div>}<CompactTable columns={keys.map(k=>k.replaceAll('_',' '))} rows={rows.map(row=>keys.map(k=>formatCell(row[k])))} /></div> }
+function formatCell(v){ if(typeof v==='boolean')return v?'Yes':'No'; if(String(v).match(/^\d{4}-\d{2}-\d{2}/))return formatDate(v); if(typeof v==='number')return number(v); return v ?? '-'; }
+
+function PerformanceTab({ publicId }) { const [data,setData]=useState(null), [loading,setLoading]=useState(true), [error,setError]=useState(''); useEffect(()=>{AdminApi.businessPerformance(publicId).then(setData).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[publicId]); if(loading)return<Loader/>; if(error)return<Alert type="error">{error}</Alert>; const s=toObject(data.summary); return <div className="drawer-section"><section className="kpi-grid compact"><Kpi label="Invoices month" value={s.invoices_this_month}/><Kpi label="Sales month" value={money(s.sales_this_month)}/><Kpi label="Collected" value={money(s.collected_this_month)}/><Kpi label="Receivable" value={money(s.total_receivable)} /></section><div className="card inner"><CardHead title="Daily sales"/><MiniBars rows={toArray(data.dailySales).map(x=>({label:x.label,value:Number(x.total_sales||0)}))} moneyBars /></div><div className="card inner"><CardHead title="Top products"/><CompactTable columns={["Product","Qty","Total"]} rows={toArray(data.topProducts).map(x=>[x.product_name, x.qty, money(x.total)])}/></div></div> }
+
+function NearExpiry({ onOpenBusiness }) { const [rows,setRows]=useState([]), [days,setDays]=useState(14); useEffect(()=>{AdminApi.nearExpiry(days).then(setRows)},[days]); return <section className="card"><CardHead title="Near expiry businesses" sub="Businesses that need renewal follow-up" right={<select value={days} onChange={e=>setDays(e.target.value)}><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select>} />{rows.length?<CompactTable columns={["Business","Owner","Plan","End","Days","Action"]} rows={rows.map(b=>[b.businessName,b.ownerEmail,b.planName,formatDate(b.endDate),b.daysLeft,<button className="btn tiny" onClick={()=>onOpenBusiness(b.publicId)}>Open</button>])}/>:<Empty/>}</section> }
+
+function Users() { const [rows,setRows]=useState([]), [search,setSearch]=useState(''), [show,setShow]=useState(false), [loading,setLoading]=useState(true); const load=useCallback(()=>{setLoading(true); AdminApi.listUsers({search}).then(r=>setRows(r.data)).finally(()=>setLoading(false))},[search]); useEffect(()=>{load()},[load]); return <section className="card"><CardHead title="Users" sub="Create super users and block any user" right={<button className="btn primary small" onClick={()=>setShow(true)}>+ Super user</button>} /><SearchBar value={search} setValue={setSearch} onSearch={load} placeholder="Search user" />{loading?<Loader/>:<CompactTable columns={["Name","Email","Phone","Role","Businesses","Status","Action"]} rows={rows.map(u=>[u.full_name,u.email,u.phone_number,u.is_super_admin?'Super Admin':u.is_support_admin?'Support':'User',u.business_count,<StatusBadge value={u.is_active?'ACTIVE':'BLOCKED'}/>,<button className="btn tiny" onClick={async()=>{await AdminApi.setUserActive(u.public_id,!u.is_active);load();}}>{u.is_active?'Block':'Unblock'}</button>])}/>} {show&&<CreateSuperUserModal onClose={()=>setShow(false)} onSaved={()=>{setShow(false);load();}}/>}</section> }
+function CreateSuperUserModal({onClose,onSaved}) { const [f,setF]=useState({fullName:'',email:'',phoneNumber:'',password:'12345678',isSupportAdmin:false}), [err,setErr]=useState(''); function set(k,v){setF(x=>({...x,[k]:v}))} async function save(e){e.preventDefault();setErr('');try{await AdminApi.createSuperUser(f);onSaved();}catch(x){setErr(x.message)}} return <Modal title="Create super user" onClose={onClose}><form className="form-grid two" onSubmit={save}>{err&&<Alert type="error">{err}</Alert>}<Field label="Full name"><input value={f.fullName} onChange={e=>set('fullName',e.target.value)} required/></Field><Field label="Email"><input type="email" value={f.email} onChange={e=>set('email',e.target.value)} required/></Field><Field label="Phone"><input value={f.phoneNumber} onChange={e=>set('phoneNumber',e.target.value)}/></Field><Field label="Password"><input value={f.password} onChange={e=>set('password',e.target.value)} required/></Field><Field label="Support admin"><select value={String(f.isSupportAdmin)} onChange={e=>set('isSupportAdmin',e.target.value==='true')}><option value="false">No</option><option value="true">Yes</option></select></Field><div className="modal-actions"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary">Create</button></div></form></Modal> }
+
+function Billing({ onOpenBusiness }) { const [rows,setRows]=useState([]), [status,setStatus]=useState(''); const load=useCallback(()=>AdminApi.subscriptionPayments(status).then(setRows),[status]); useEffect(()=>{load()},[load]); return <section className="card"><CardHead title="Subscription billing" sub="Approve/reject payments and view billing history" right={<select value={status} onChange={e=>setStatus(e.target.value)}><option value="">All</option><option>PENDING</option><option>APPROVED</option><option>REJECTED</option></select>} />{rows.length?<CompactTable columns={["Business","Plan","Amount","Method","Ref","Status","Date","Action"]} rows={rows.map(p=>[<button className="link" onClick={()=>onOpenBusiness(p.business_public_id)}>{p.business_name}</button>,p.plan_name,money(p.amount,p.currency_code),p.payment_method,p.transaction_reference,<StatusBadge value={p.payment_status}/>,formatDateTime(p.created_at),p.payment_status==='PENDING'?<span><button className="btn tiny" onClick={async()=>{await AdminApi.approvePayment(p.subscription_payment_id);load();}}>Approve</button><button className="btn tiny danger" onClick={async()=>{const r=prompt('Reject reason?')||'Rejected';await AdminApi.rejectPayment(p.subscription_payment_id,r);load();}}>Reject</button></span>:'-'])}/>:<Empty/>}</section> }
+function Plans(){const[rows,setRows]=useState([]);useEffect(()=>{AdminApi.plans().then(setRows)},[]);return <section className="card"><CardHead title="Plans" sub="Current SaaS plans"/><CompactTable columns={["Plan","Monthly","Users","Invoices","Inventory","WhatsApp","Active"]} rows={rows.map(p=>[p.plan_name,money(p.monthly_price,p.currency_code),p.max_users||'Unlimited',p.max_invoices_per_month||'Unlimited',p.has_inventory?'Yes':'No',p.has_whatsapp_sharing?'Yes':'No',p.is_active?'Yes':'No'])}/></section>}
+function Tools(){return <section className="card"><CardHead title="Useful admin tools" sub="Recommended controls for your SaaS"/><div className="tool-grid"><div><b>Audit logs</b><span>Track edits, blocks, approvals and login activity.</span></div><div><b>Expired auto-block</b><span>Later add a daily job to block expired businesses automatically.</span></div><div><b>Backup exports</b><span>Export customers, sales and inventory per business.</span></div><div><b>Support access</b><span>Create support users without full delete access.</span></div><div><b>Announcements</b><span>Send app notices to all businesses.</span></div><div><b>WhatsApp templates</b><span>Manage invoice and payment reminder templates.</span></div></div></section>}
+
+function Modal({ title, onClose, children }) { return <div className="modal-backdrop"><div className="modal"><header><h2>{title}</h2><button className="btn ghost" onClick={onClose}>×</button></header>{children}</div></div>; }
 
 createRoot(document.getElementById('root')).render(<App />);

@@ -1,110 +1,55 @@
-# Smart Khata Super Admin Portal
+# Smart Khata Super Admin Web - Enhanced
 
-A professional web portal for controlling the Smart Khata SaaS platform.
+Compact Super Admin portal for Smart Khata SaaS.
 
-It connects to the live Railway API:
+## Modules included
+
+- Dashboard KPI cards and sales chart
+- Business list/search/block/unblock
+- Create business + owner/admin user + subscription
+- Edit business details
+- Business detail drawer
+- View every business's users, customers, sales, inventory, billing and performance
+- Attach/update subscriptions to any business
+- Near-expiry subscription businesses
+- WhatsApp API link/key settings per business
+- Create super users
+- Block/unblock users
+- Subscription payment approval/rejection
+- Subscription billing history per business
+- Inventory export as Excel-compatible CSV
+- Small font, compact design
+
+## API URL
+
+Default API:
 
 ```text
 https://smart-khata-production.up.railway.app
 ```
 
-## Included modules
+## GitHub Pages
 
-- Super admin login
-- Dashboard KPI cards
-- Platform overview chart
-- Businesses list/search
-- Block/unblock business
-- Subscription payments list
-- Approve subscription payment
-- Reject subscription payment
-- Subscription plans view
-- Setup guide
-- GitHub Pages deployment workflow
-- Optional Railway deployment config
-
-## Important
-
-This is a frontend portal only. It uses your existing Smart Khata API and PostgreSQL database.
-
-The login user must have `is_super_admin = true` in PostgreSQL.
-
-## Make a user Super Admin
-
-Open Railway → Postgres → Data → Query and run:
-
-```sql
-UPDATE app_users
-SET is_super_admin = TRUE
-WHERE LOWER(email) = LOWER('ahmed@example.com');
-```
-
-Replace `ahmed@example.com` with your real admin email.
-
-Then login in the portal using that email/password.
-
-## GitHub Pages deployment
-
-1. Create a GitHub repo, for example:
+Repo name expected:
 
 ```text
 smart-khata-superadmin-web
 ```
 
-2. Upload this project to GitHub.
-
-3. Go to repo → Settings → Pages.
-
-4. Under Source, select:
+GitHub Pages URL:
 
 ```text
-GitHub Actions
+https://wabwar786.github.io/smart-khata-superadmin-web/
 ```
 
-5. Go to Actions → Deploy Super Admin Portal → Run workflow.
-
-6. After success, open the GitHub Pages URL.
-
-## Railway deployment option
-
-If you want to deploy this portal on Railway instead of GitHub Pages:
-
-1. Create a new Railway service from this repo.
-2. Add variable:
+Run workflow:
 
 ```text
-VITE_API_BASE_URL=https://smart-khata-production.up.railway.app
+Actions -> Deploy Super Admin Portal -> Run workflow
 ```
 
-3. Railway will run:
+Make sure `Settings -> Pages -> Source = GitHub Actions`.
 
-```bash
-npm run build
-npm start
-```
+## Important
 
-## Local run
-
-```bash
-npm install
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-## API variable
-
-Default API URL is already set. To change it, set:
-
-```text
-VITE_API_BASE_URL=https://your-api-url.up.railway.app
-```
-
-
-## GitHub Actions build fix
-
-This package uses Node 24 and does not require `package-lock.json`. The GitHub Actions workflow uses `npm install` without npm cache, so it will not fail with “Dependencies lock file is not found”. A `vite.config.js` file is also included with `base: './'` for GitHub Pages asset loading.
+Deploy the updated API package first, then deploy this web portal. Some admin screens need the new `/api/admin/*` endpoints.
